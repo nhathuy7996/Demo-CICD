@@ -14,41 +14,64 @@ public class BuildScript
     [MenuItem("Build/Build Android")]
     public static void BuildAndroid()
     {
-        string buildPath = GetBuildPath();
-        string outputPath = Path.Combine(buildPath, "Android");
-
-        if (!Directory.Exists(outputPath))
+        try
         {
-            Directory.CreateDirectory(outputPath);
+            string buildPath = GetBuildPath();
+            string outputPath = Path.Combine(buildPath, "Android");
+
+            if (!Directory.Exists(outputPath))
+            {
+                Directory.CreateDirectory(outputPath);
+                Debug.Log($"Created output directory: {outputPath}");
+            }
+
+            string appName = PlayerSettings.productName;
+            string fileName = Path.Combine(outputPath, $"{appName}.apk");
+
+            // Lấy danh sách scenes được enable trong Build Settings
+            string[] scenes = GetEnabledScenes();
+
+            if (scenes.Length == 0)
+            {
+                Debug.LogError("No scenes found in Build Settings! Please add scenes in File > Build Settings");
+                EditorApplication.Exit(1);
+                return;
+            }
+
+            Debug.Log($"Building Android APK");
+            Debug.Log($"Output path: {fileName}");
+            Debug.Log($"Scenes to build: {string.Join(", ", scenes)}");
+
+            BuildPlayerOptions buildPlayerOptions = new BuildPlayerOptions
+            {
+                scenes = scenes,
+                locationPathName = fileName,
+                target = BuildTarget.Android,
+                options = BuildOptions.None
+            };
+
+            BuildReport report = BuildPipeline.BuildPlayer(buildPlayerOptions);
+            BuildSummary summary = report.summary;
+
+            if (summary.result == BuildResult.Succeeded)
+            {
+                Debug.Log($"✓ Build succeeded!");
+                Debug.Log($"  Size: {summary.totalSize} bytes");
+                Debug.Log($"  Output: {fileName}");
+                Debug.Log($"  Build time: {summary.totalTime}");
+            }
+            else if (summary.result == BuildResult.Failed)
+            {
+                Debug.LogError($"✗ Build failed!");
+                Debug.LogError($"  Total errors: {summary.totalErrors}");
+                Debug.LogError($"  Total warnings: {summary.totalWarnings}");
+                EditorApplication.Exit(1);
+            }
         }
-
-        string appName = PlayerSettings.productName;
-        string fileName = Path.Combine(outputPath, $"{appName}.apk");
-
-        // Lấy danh sách scenes được enable trong Build Settings
-        string[] scenes = GetEnabledScenes();
-
-        BuildPlayerOptions buildPlayerOptions = new BuildPlayerOptions
+        catch (Exception e)
         {
-            scenes = scenes,
-            locationPathName = fileName,
-            target = BuildTarget.Android,
-            options = BuildOptions.None
-        };
-
-        Debug.Log($"Building Android APK to: {fileName}");
-
-        BuildReport report = BuildPipeline.BuildPlayer(buildPlayerOptions);
-        BuildSummary summary = report.summary;
-
-        if (summary.result == BuildResult.Succeeded)
-        {
-            Debug.Log($"Build succeeded: {summary.totalSize} bytes");
-            Debug.Log($"Output: {fileName}");
-        }
-        else if (summary.result == BuildResult.Failed)
-        {
-            Debug.LogError("Build failed");
+            Debug.LogError($"Build exception: {e.Message}");
+            Debug.LogError($"Stack trace: {e.StackTrace}");
             EditorApplication.Exit(1);
         }
     }
