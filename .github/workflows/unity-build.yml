@@ -38,18 +38,13 @@ jobs:
       
       - name: Activate Unity License
         run: |
-          "C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe" -quit -batchmode -nographics -logFile - -username "${{ env.UNITY_EMAIL }}" -password "${{ env.UNITY_PASSWORD }}"
+          "C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe" -quit -batchmode -nographics -username "${{ env.UNITY_EMAIL }}" -password "${{ env.UNITY_PASSWORD }}" -logFile activate.log
+        continue-on-error: true
         shell: cmd
       
       - name: Build for Android
         run: |
-          "C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe" -quit -batchmode -nographics -projectPath "${{ github.workspace }}" -buildTarget Android -executeMethod BuildScript.BuildAndroid -logFile -
-        shell: cmd
-      
-      - name: Return Unity License
-        if: always()
-        run: |
-          "C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe" -quit -batchmode -returnlicense -logFile -
+          "C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe" -quit -batchmode -nographics -projectPath "${{ github.workspace }}" -buildTarget Android -executeMethod BuildScript.BuildAndroid -logFile build.log
         shell: cmd
       
       - name: Upload Build Artifacts
