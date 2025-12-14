@@ -42,11 +42,12 @@ jobs:
         continue-on-error: true
         shell: cmd
       
-      - name: Export commit subject
-        shell: powershell
+      - name: Export commit subject (cmd)
+        shell: cmd
         run: |
-          $msg = (git log -1 --pretty=%s)
-          Add-Content $env:GITHUB_ENV ("GIT_COMMIT_SUBJECT=" + $msg)
+          for /f "delims=" %%i in ('git log -1 --pretty^=%%s') do echo GIT_COMMIT_SUBJECT=%%i>> "%GITHUB_ENV%"
+
+
 
       - name: Build for Android
         run: |
