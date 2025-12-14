@@ -42,6 +42,12 @@ jobs:
         continue-on-error: true
         shell: cmd
       
+      - name: Export commit subject
+        shell: cmd
+        run: |
+          $msg = (git log -1 --pretty=%s)
+          Add-Content $env:GITHUB_ENV ("GIT_COMMIT_SUBJECT=" + $msg)
+
       - name: Build for Android
         run: |
           "C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe" -quit -batchmode -nographics -projectPath "${{ github.workspace }}" -buildTarget Android -executeMethod BuildScript.BuildAndroid -logFile build.log
