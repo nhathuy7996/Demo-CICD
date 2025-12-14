@@ -14,47 +14,60 @@ on:
 env:
   UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
   UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+  # --- Cách C: luôn chỉ định config cố định (không phụ thuộc NetworkService profile)
+  RCLONE_CONFIG: C:\CODE\actions-runner\rclone.conf
+
+  # Khuyên dùng Variables (không nhạy cảm) thay vì Secrets
   RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+
+  # Nếu rclone.exe không nằm trong PATH, set variable này
+  # RCLONE_PATH: ${{ vars.RCLONE_PATH }}
 
 jobs:
   build:
     name: Build Unity Project
     runs-on: [self-hosted, Windows, X64]
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           lfs: true
           submodules: recursive
-      
+
       - name: Cache Library
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: Library
-          key: Library-${{ runner.os }}-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          key: Library-${{ runner.os }}-${{ hashFiles('Packages/manifest.json','Packages/packages-lock.json','ProjectSettings/ProjectVersion.txt','ProjectSettings/EditorBuildSettings.asset') }}
           restore-keys: |
             Library-${{ runner.os }}-
             Library-
-      
+
+      - name: Show rclone config (debug)
+        shell: cmd
+        run: |
+          echo RCLONE_CONFIG=%RCLONE_CONFIG%
+          echo RCLONE_REMOTE=%RCLONE_REMOTE%
+          where rclone || echo rclone not in PATH (set RCLONE_PATH if needed)
+
       - name: Activate Unity License
         run: |
           "C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe" -quit -batchmode -nographics -username "${{ env.UNITY_EMAIL }}" -password "${{ env.UNITY_PASSWORD }}" -logFile activate.log
         continue-on-error: true
         shell: cmd
-      
+
       - name: Export commit subject (cmd)
         shell: cmd
         run: |
           for /f "delims=" %%i in ('git log -1 --pretty^=%%s') do echo GIT_COMMIT_SUBJECT=%%i>> "%GITHUB_ENV%"
 
-
-
       - name: Build for Android
         run: |
           "C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe" -quit -batchmode -nographics -projectPath "${{ github.workspace }}" -buildTarget Android -executeMethod BuildScript.BuildAndroid -logFile -
         shell: cmd
-      
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -63,4 +76,5 @@ jobs:
           path: |
             Builds/
             Logs/
+            activate.log
           retention-days: 7

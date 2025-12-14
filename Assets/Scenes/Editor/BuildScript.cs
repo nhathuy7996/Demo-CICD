@@ -10,11 +10,9 @@ using Debug = UnityEngine.Debug;
 public class BuildScript
 {
     // ==== CONFIG ====
-    // Cho phép upload bằng rclone nếu RCLONE_REMOTE hoặc DRIVE_FOLDER_ID có mặt trong env
     private const string DefaultBuildRoot = "Builds";
     private const int MaxSlugLen = 48;
 
-    // ==== PUBLIC MENUS ====
     [MenuItem("Build/Build Android")]
     public static void BuildAndroid()
     {
@@ -24,7 +22,7 @@ public class BuildScript
             string outputDir = Path.Combine(buildRoot, "Android");
             Directory.CreateDirectory(outputDir);
 
-            // --- Tạo tên file từ commit/branch ---
+            // --- File name from branch/sha/commit subject ---
             string appName = PlayerSettings.productName;
             string branch = Env("GITHUB_REF_NAME", "local");
             string sha = Env("GITHUB_SHA", Guid.NewGuid().ToString("N"));
@@ -33,8 +31,7 @@ public class BuildScript
             string slug = string.IsNullOrEmpty(commitSubject) ? null : Slugify(commitSubject);
             if (!string.IsNullOrEmpty(slug) && slug.Length > MaxSlugLen) slug = slug.Substring(0, MaxSlugLen);
 
-            // Tên cuối: App-branch-shortsha[-slug].apk
-            var filenameOnly = string.IsNullOrEmpty(slug)
+            string filenameOnly = string.IsNullOrEmpty(slug)
                 ? $"{appName}-{branch}-{shortSha}.apk"
                 : $"{appName}-{branch}-{shortSha}-{slug}.apk";
 
@@ -49,8 +46,7 @@ public class BuildScript
                 return;
             }
 
-            // --- Build ---
-            Debug.Log($"Building Android APK");
+            Debug.Log("Building Android APK");
             Debug.Log($"Output path: {filePath}");
             Debug.Log($"Scenes: {string.Join(", ", scenes)}");
 
@@ -67,12 +63,11 @@ public class BuildScript
 
             if (summary.result == BuildResult.Succeeded)
             {
-                Debug.Log($"✓ Build succeeded!");
+                Debug.Log("✓ Build succeeded!");
                 Debug.Log($"  Size: {summary.totalSize} bytes");
                 Debug.Log($"  Output: {filePath}");
                 Debug.Log($"  Build time: {summary.totalTime}");
 
-                // --- Upload bằng rclone (tùy chọn) ---
                 TryUploadViaRclone(filePath);
             }
             else
@@ -160,7 +155,6 @@ public class BuildScript
     // ==== HELPERS ====
     private static string GetBuildRoot()
     {
-        // Thống nhất gốc Builds ở cạnh thư mục project (Assets/..)
         return Path.Combine(Application.dataPath, "..", DefaultBuildRoot);
     }
 
@@ -186,24 +180,37 @@ public class BuildScript
         {
             if (char.IsLetterOrDigit(ch)) sb.Append(char.ToLowerInvariant(ch));
             else if (ch == ' ' || ch == '-' || ch == '_' || ch == '.') sb.Append('-');
-            // else skip
         }
         var slug = sb.ToString();
         while (slug.Contains("--")) slug = slug.Replace("--", "-");
         return slug.Trim('-');
     }
 
+    private static string RcloneConfigArg()
+    {
+        // Cách C: chỉ định config cố định để không phụ thuộc account (NetworkService / user)
+        string cfg = Env("RCLONE_CONFIG", null);
+        if (string.IsNullOrWhiteSpace(cfg)) return "";
+        return $" --config \"{cfg}\"";
+    }
+
     private static void TryUploadViaRclone(string localFilePath)
     {
-        // Điều kiện tối thiểu: có rclone + remote hoặc folderId
-        string rclonePath = Env("RCLONE_PATH", "rclone");            // ví dụ: C:\rclone\rclone.exe  (mặc định: rclone trong PATH)
-        string remote = Env("RCLONE_REMOTE", null);              // ví dụ: gdrive:/MyFolder
-        string folderId = Env("DRIVE_FOLDER_ID", null);            // ví dụ: 1AbCDefGhijkLMNOPq (ID thư mục Drive)
+        string rclonePath = Env("RCLONE_PATH", "rclone");
+        string remote = Env("RCLONE_REMOTE", null);       // ví dụ: gdrive:/UnityBuilds/APK
+        string folderId = Env("DRIVE_FOLDER_ID", null);   // optional
+        string cfg = Env("RCLONE_CONFIG", null);
+
         if (string.IsNullOrEmpty(remote) && string.IsNullOrEmpty(folderId))
         {
             Debug.Log("Rclone upload skipped: RCLONE_REMOTE or DRIVE_FOLDER_ID not set.");
             return;
         }
+
+        Debug.Log($"[rclone] exe={rclonePath}");
+        Debug.Log($"[rclone] config={(string.IsNullOrWhiteSpace(cfg) ? "(default profile)" : cfg)}");
+        Debug.Log($"[rclone] remote={(string.IsNullOrWhiteSpace(remote) ? "(null)" : remote)}");
+        Debug.Log($"[rclone] folderId={(string.IsNullOrWhiteSpace(folderId) ? "(null)" : folderId)}");
 
         try
         {
@@ -211,35 +218,36 @@ public class BuildScript
             string copyArgs;
             if (!string.IsNullOrEmpty(remote))
             {
-                // copy to a given remote:path
-                copyArgs = $"copy \"{localFilePath}\" \"{remote}\" --progress";
+                copyArgs = $"copy \"{localFilePath}\" \"{remote}\" --progress{RcloneConfigArg()}";
             }
             else
             {
-                // copy to root with folder as rootId
-                copyArgs = $"copy \"{localFilePath}\" \"gdrive:\" --drive-root-folder-id \"{folderId}\" --progress";
+                // NOTE: mặc định remote gdrive:
+                copyArgs = $"copy \"{localFilePath}\" \"gdrive:\" --drive-root-folder-id \"{folderId}\" --progress{RcloneConfigArg()}";
             }
+
             var copyOk = Exec(rclonePath, copyArgs, out var copyOut, out var copyErr);
             Debug.Log($"[rclone copy] ok={copyOk}\n{copyOut}\n{copyErr}");
+            if (!copyOk)
+            {
+                Debug.LogWarning("Rclone copy failed. Check rclone output above.");
+                return;
+            }
 
             // 2) Lấy share link
             string linkTarget;
             string linkArgs;
-            var fileName = Path.GetFileName(localFilePath);
+            string fileName = Path.GetFileName(localFilePath);
 
             if (!string.IsNullOrEmpty(remote))
             {
-                // link remote:path/to/file
-                // nếu remote là "gdrive:/MyFolder", linkTarget = "gdrive:/MyFolder/<file>"
                 linkTarget = remote.EndsWith("/") ? $"{remote}{fileName}" : $"{remote}/{fileName}";
-                linkArgs = $"link \"{linkTarget}\"";
+                linkArgs = $"link \"{linkTarget}\"{RcloneConfigArg()}";
             }
             else
             {
-                // với folderId, dùng root folder id + tên file
-                // rclone link sẽ tôn trọng --drive-root-folder-id
                 linkTarget = $"gdrive:{fileName}";
-                linkArgs = $"link \"{linkTarget}\" --drive-root-folder-id \"{folderId}\"";
+                linkArgs = $"link \"{linkTarget}\" --drive-root-folder-id \"{folderId}\"{RcloneConfigArg()}";
             }
 
             var linkOk = Exec(rclonePath, linkArgs, out var linkOut, out var linkErr);
@@ -247,6 +255,8 @@ public class BuildScript
             {
                 var url = linkOut.Trim();
                 Debug.Log($"📤 Uploaded to Google Drive: {url}");
+                // In ra rõ ràng để dễ search trong Actions log
+                Debug.Log($"::notice title=Google Drive::APK Link: {url}");
             }
             else
             {
