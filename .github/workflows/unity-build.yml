@@ -43,7 +43,7 @@ jobs:
         shell: cmd
       
       - name: Export commit subject
-        shell: cmd
+        shell: powershell
         run: |
           $msg = (git log -1 --pretty=%s)
           Add-Content $env:GITHUB_ENV ("GIT_COMMIT_SUBJECT=" + $msg)
